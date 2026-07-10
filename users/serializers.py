@@ -5,6 +5,7 @@ class UserSerializer(serializers.Serializer):
     last_name = serializers.CharField(max_length=100)
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
+    role = serializers.CharField(max_length=50, default="Student", required=False)
 
     def validate_email(self, value):
-        return value
+        return value.strip().lower()

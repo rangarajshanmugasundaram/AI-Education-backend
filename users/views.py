@@ -13,23 +13,37 @@ class RegisterView(APIView):
         serializer = UserSerializer(data=request.data)
         if serializer.is_valid():
             db.users.insert_one(serializer.validated_data)
-            return Response({"message": "User registered successfully!"}, status=status.HTTP_201_CREATED)
+            return Response(
+                {
+                    "message": "User registered successfully!",
+                    "role": serializer.validated_data.get("role")
+                },
+                status=status.HTTP_201_CREATED
+            )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class LoginView(APIView):
     def post(self, request):
-        email = request.data.get('email')
+        email = request.data.get('email', '').strip().lower()
         password = request.data.get('password')
+
         user = db.users.find_one({"email": email})
+
         if user and user.get('password') == password:
-            return Response({"message": "Login successful!"}, status=status.HTTP_200_OK)
+            return Response({
+                "message": "Login successful!",
+                "token": "mock-jwt-token-from-backend-xyz123",
+                "email": user.get("email"),
+                "role": user.get("role", "Student")
+            }, status=status.HTTP_200_OK)
+
         return Response({"error": "Invalid email or password"}, status=status.HTTP_401_UNAUTHORIZED)
 
 
 class ForgotPasswordView(APIView):
     def post(self, request):
-        email = request.data.get('email', '').strip()
+        email = request.data.get('email', '').strip().lower()
         user = db.users.find_one({"email": email})
         if not user:
             return Response({"error": "Email address not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -55,7 +69,7 @@ class ForgotPasswordView(APIView):
 
 class ResetPasswordView(APIView):
     def post(self, request):
-        email = request.data.get('email', '').strip()
+        email = request.data.get('email', '').strip().lower()
         otp = request.data.get('otp')
         new_password = request.data.get('password')
 
