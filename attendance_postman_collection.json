@@ -1,0 +1,62 @@
+{
+  "info": {
+    "name": "Attendance API Collection",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Mark Attendance",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer mock-jwt-token-from-backend-xyz123" },
+          { "key": "X-User-Email", "value": "trainertest@gmail.com" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"user_id\": \"STUDENT_TEST_001\",\n  \"session_id\": \"session_react_basics\",\n  \"join_time\": \"2026-07-13 10:00:00\",\n  \"leave_time\": \"2026-07-13 11:30:00\",\n  \"status\": \"Present\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "http://127.0.0.1:8000/api/attendance/mark" }
+      }
+    },
+    {
+      "name": "Get Session Attendance",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer mock-jwt-token-from-backend-xyz123" },
+          { "key": "X-User-Email", "value": "trainertest@gmail.com" }
+        ],
+        "url": { "raw": "http://127.0.0.1:8000/api/attendance/session/session_react_basics" }
+      }
+    },
+    {
+      "name": "Get Student Attendance",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer mock-jwt-token-from-backend-xyz123" },
+          { "key": "X-User-Email", "value": "trainertest@gmail.com" }
+        ],
+        "url": { "raw": "http://127.0.0.1:8000/api/attendance/student/STUDENT_TEST_001" }
+      }
+    },
+    {
+      "name": "Update Attendance",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer mock-jwt-token-from-backend-xyz123" },
+          { "key": "X-User-Email", "value": "trainertest@gmail.com" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"user_id\": \"STUDENT_TEST_001\",\n  \"session_id\": \"session_react_basics\",\n  \"status\": \"Late\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "http://127.0.0.1:8000/api/attendance/update" }
+      }
+    }
+  ]
+}
