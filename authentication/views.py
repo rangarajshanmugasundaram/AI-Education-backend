@@ -1,10 +1,10 @@
 import random
+import bcrypt
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.core.mail import send_mail
 from django.conf import settings
-import bcrypt
 
 from db_connection import db
 from .serializers import UserSerializer
@@ -24,7 +24,7 @@ class RegisterView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Hash the password cleanly
+            # Hash the password cleanly on registration
             hashed_password = bcrypt.hashpw(data['password'].encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             data['password'] = hashed_password
             data['email'] = data['email'].strip().lower()
@@ -46,14 +46,26 @@ class LoginView(APIView):
         password = request.data.get('password', '')
 
         user = db.users.find_one({"email": email})
+        if not user:
+            return Response({"error": "Invalid email or password"}, status=status.HTTP_401_UNAUTHORIZED)
 
-        if user and bcrypt.checkpw(password.encode('utf-8'), user.get('password', '').encode('utf-8')):
-            return Response({
-                "message": "Login successful!",
-                "token": "mock-jwt-token-from-backend-xyz123",
-                "email": user.get("email"),
-                "role": user.get("role", "Student")
-            }, status=status.HTTP_200_OK)
+        stored_password = user.get('password', '')
+
+        try:
+            # Check if password exists and has a valid bcrypt structural prefix ($2b$ or $2a$)
+            if stored_password and isinstance(stored_password, str) and stored_password.startswith('$2'):
+                if bcrypt.checkpw(password.encode('utf-8'), stored_password.encode('utf-8')):
+                    return Response({
+                        "message": "Login successful!",
+                        "token": "mock-jwt-token-from-backend-xyz123",
+                        "email": user.get("email"),
+                        "role": user.get("role", "Student")
+                    }, status=status.HTTP_200_OK)
+            else:
+                print(f"Warning: User {email} has an unhashed or invalid password format in database.")
+        except ValueError:
+            # Prevent malformed strings in the database from crashing the Django process
+            pass
 
         return Response({"error": "Invalid email or password"}, status=status.HTTP_401_UNAUTHORIZED)
 
@@ -91,6 +103,7 @@ class ResetPasswordView(APIView):
         if not user:
             return Response({"error": "Invalid OTP or Email"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Safely hash the new password string cleanly using bcrypt
         hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
         result = db.users.update_one(

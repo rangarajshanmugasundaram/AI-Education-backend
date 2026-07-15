@@ -23,6 +23,7 @@ INSTALLED_APPS = [
     # Modular Local Apps (Explicitly using the Unique App Configs)
     'authentication.apps.AuthenticationConfig',
     'attendance.apps.AttendanceConfig',
+    'chat.apps.ChatConfig',
 
     # Core Django Apps
     'django.contrib.admin',

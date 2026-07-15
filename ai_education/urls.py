@@ -4,9 +4,12 @@ from django.urls import path, include
 urlpatterns = [
     path('admin/', admin.site.urls),
 
-    # 🛡️ Authentication Routes
-    path('api/auth/', include('authentication.urls')),
+    # 🛡️ Authentication Routes (Updated path from api/auth/ to api/)
+    path('api/', include('authentication.urls')),
 
     # 📝 Attendance Routes
     path('api/attendance/', include('attendance.urls')),
+
+    # 💬 Chat System Routes
+    path('api/chat/', include('chat.urls')),
 ]
