@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     'authentication.apps.AuthenticationConfig',
     'attendance.apps.AttendanceConfig',
     'chat.apps.ChatConfig',
+    'whiteboard.apps.WhiteboardConfig',
 
     # Core Django Apps
     'django.contrib.admin',

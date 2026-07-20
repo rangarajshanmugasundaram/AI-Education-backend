@@ -12,4 +12,7 @@ urlpatterns = [
 
     # 💬 Chat System Routes
     path('api/chat/', include('chat.urls')),
+
+    # 🎨 Whiteboard Collaboration Routes
+    path('api/whiteboard/', include('whiteboard.urls')),
 ]

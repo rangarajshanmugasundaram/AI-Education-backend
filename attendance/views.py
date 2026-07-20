@@ -7,6 +7,7 @@ from db_connection import db
 from authentication.middleware import check_role
 from .serializers import AttendanceSerializer
 
+
 class MarkAttendanceView(APIView):
     @check_role(["Student", "Admin", "Trainer"])
     def post(self, request):
@@ -17,7 +18,6 @@ class MarkAttendanceView(APIView):
         data = serializer.validated_data
         user_id = str(data['user_id']).strip()
         session_id = str(data['session_id']).strip()
-        # Ensure student_name is handled
         student_name = str(data.get('student_name', 'Unknown')).strip()
 
         # Prevent duplicate attendance records
@@ -32,7 +32,6 @@ class MarkAttendanceView(APIView):
         join_str = data.get('join_time')
         leave_str = data.get('leave_time')
 
-        # Compute session timeline tracking metrics
         if join_str and leave_str:
             try:
                 fmt = "%Y-%m-%d %H:%M:%S"
@@ -64,14 +63,22 @@ class MarkAttendanceView(APIView):
             status=status.HTTP_201_CREATED
         )
 
+
 class GetSessionAttendanceView(APIView):
     @check_role(["Admin", "Trainer"])
     def get(self, request, session_id):
         target_session = str(session_id).strip()
-        records = list(db.attendance.find({"session_id": target_session}))
+
+        # Pull everything globally if "all" keyword parameters are intercepted
+        if target_session.lower() == "all":
+            records = list(db.attendance.find({}))
+        else:
+            records = list(db.attendance.find({"session_id": target_session}))
+
         for r in records:
             r.pop('_id', None)
         return Response({"session_id": target_session, "records": records}, status=status.HTTP_200_OK)
+
 
 class GetStudentAttendanceView(APIView):
     @check_role(["Student", "Admin", "Trainer"])
@@ -81,6 +88,7 @@ class GetStudentAttendanceView(APIView):
         for r in records:
             r.pop('_id', None)
         return Response({"student_id": target_student, "records": records}, status=status.HTTP_200_OK)
+
 
 class UpdateAttendanceView(APIView):
     @check_role(["Admin", "Trainer"])
@@ -134,3 +142,103 @@ class UpdateAttendanceView(APIView):
 
         db.attendance.update_one({"user_id": user_id, "session_id": session_id}, {"$set": update_fields})
         return Response({"message": "Attendance record updated successfully!"}, status=status.HTTP_200_OK)
+
+
+class GetSessionAttendanceReportView(APIView):
+    @check_role(["Admin", "Trainer"])
+    def get(self, request, session_id):
+        target_session = str(session_id).strip()
+
+        # Global metrics arithmetic fallback block for collective dashboard cards
+        if target_session.lower() == "all":
+            records = list(db.attendance.find({}))
+        else:
+            records = list(db.attendance.find({"session_id": target_session}))
+
+        total_records = len(records)
+        present_count = sum(1 for r in records if r.get('status') == 'Present')
+        absent_count = sum(1 for r in records if r.get('status') == 'Absent')
+        late_count = sum(1 for r in records if r.get('status') == 'Late')
+
+        attendance_percentage = 0
+        if total_records > 0:
+            attendance_percentage = round(((present_count + late_count) / total_records) * 100, 2)
+
+        durations = []
+        for r in records:
+            dur_str = r.get('duration', '0 mins')
+            try:
+                val = float(str(dur_str).split()[0])
+                durations.append(val)
+            except (ValueError, IndexError):
+                continue
+
+        avg_duration = round(sum(durations) / len(durations), 2) if durations else 0
+
+        report_data = {
+            "session_id": target_session,
+            "metrics": {
+                "total_students_logged": total_records,
+                "presence_count": present_count,
+                "absence_count": absent_count,
+                "lateness_count": late_count,
+                "attendance_percentage": f"{attendance_percentage}%"
+            },
+            "duration_report": {
+                "average_duration_minutes": f"{avg_duration} mins",
+                "tracked_durations": [r.get('duration', '0 mins') for r in records]
+            }
+        }
+        return Response(report_data, status=status.HTTP_200_OK)
+
+
+class GetStudentAttendanceReportView(APIView):
+    @check_role(["Student", "Admin", "Trainer"])
+    def get(self, request, student_id):
+        target_student = str(student_id).strip()
+        records = list(db.attendance.find({"user_id": target_student}))
+
+        total_records = len(records)
+        present_count = sum(1 for r in records if r.get('status') == 'Present')
+        absent_count = sum(1 for r in records if r.get('status') == 'Absent')
+        late_count = sum(1 for r in records if r.get('status') == 'Late')
+
+        attendance_percentage = 0
+        if total_records > 0:
+            attendance_percentage = round(((present_count + late_count) / total_records) * 100, 2)
+
+        durations = []
+        session_breakdown = []
+        for r in records:
+            dur_str = r.get('duration', '0 mins')
+            session_breakdown.append({
+                "session_id": r.get('session_id'),
+                "status": r.get('status'),
+                "duration": dur_str
+            })
+            try:
+                val = float(str(dur_str).split()[0])
+                durations.append(val)
+            except (ValueError, IndexError):
+                continue
+
+        total_time_spent = round(sum(durations), 2)
+        avg_time_per_session = round(total_time_spent / len(durations), 2) if durations else 0
+
+        report_data = {
+            "student_id": target_student,
+            "student_name": records[0].get('student_name', 'Unknown') if records else "Unknown",
+            "metrics": {
+                "total_sessions_tracked": total_records,
+                "presence_count": present_count,
+                "absence_count": absent_count,
+                "lateness_count": late_count,
+                "overall_attendance_percentage": f"{attendance_percentage}%"
+            },
+            "duration_report": {
+                "total_time_spent": f"{total_time_spent} mins",
+                "average_duration_per_session": f"{avg_time_per_session} mins"
+            },
+            "session_history": session_breakdown
+        }
+        return Response(report_data, status=status.HTTP_200_OK)
