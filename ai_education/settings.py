@@ -5,9 +5,7 @@ import os
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
-
-SECRET_KEY = 'django-insecure-73xhfnh+(61itd5918pn5%ivof2r2@$jvt-*$**^u)=05*qp01'
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-73xhfnh+(61itd5918pn5%ivof2r2@$jvt-*$**^u)=05*qp01')
 
 DEBUG = True
 
@@ -16,15 +14,19 @@ ALLOWED_HOSTS = ['localhost', '127.0.0.1', '*']
 
 # Application definition
 INSTALLED_APPS = [
+    'daphne',
+    'channels',
+
     # Third Party Apps
     'rest_framework',
     'corsheaders',
 
-    # Modular Local Apps (Explicitly using the Unique App Configs)
+    # Modular Local Apps
     'authentication.apps.AuthenticationConfig',
     'attendance.apps.AttendanceConfig',
     'chat.apps.ChatConfig',
     'whiteboard.apps.WhiteboardConfig',
+    'classroom.apps.ClassroomConfig',  # 🌟 Live Classroom Module
 
     # Core Django Apps
     'django.contrib.admin',
@@ -36,7 +38,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',  # Handles preflight requests first (Must be at the very top)
+    'corsheaders.middleware.CorsMiddleware',  # Preflight requests handler (Must be at the top)
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -65,7 +67,17 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'ai_education.wsgi.application'
 
-# Core SQL database (not used for users/attendance as they connect directly to MongoDB)
+# Point Django Channels to the ASGI entrypoint
+ASGI_APPLICATION = 'ai_education.asgi.application'
+
+# Channel Layers (In-memory layer for local development and testing)
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    },
+}
+
+# Core SQL database
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
@@ -93,12 +105,19 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'rangarajshanmugasundaram@gmail.com'
-EMAIL_HOST_PASSWORD = 'YOUR_APP_PASSWORD_HERE'  # Swap with your secure app password
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', 'rangarajshanmugasundaram@gmail.com')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 
 # --- GLOBAL CORS CONFIGURATION FOR FRONTEND HANDSHAKE ---
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
 
 CORS_ALLOW_HEADERS = [
     'accept',

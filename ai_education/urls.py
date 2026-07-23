@@ -4,7 +4,7 @@ from django.urls import path, include
 urlpatterns = [
     path('admin/', admin.site.urls),
 
-    # 🛡️ Authentication Routes (Updated path from api/auth/ to api/)
+    # 🛡️ Authentication Routes
     path('api/', include('authentication.urls')),
 
     # 📝 Attendance Routes
@@ -15,4 +15,7 @@ urlpatterns = [
 
     # 🎨 Whiteboard Collaboration Routes
     path('api/whiteboard/', include('whiteboard.urls')),
+
+    # 🏫 Live Classroom Engine Routes (Tasks 1-10)
+    path('api/classroom/', include('classroom.urls')),
 ]
