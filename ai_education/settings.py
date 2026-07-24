@@ -26,8 +26,8 @@ INSTALLED_APPS = [
     'attendance.apps.AttendanceConfig',
     'chat.apps.ChatConfig',
     'whiteboard.apps.WhiteboardConfig',
-    'classroom.apps.ClassroomConfig',  # 🌟 Live Classroom Module
-
+    'classroom.apps.ClassroomConfig',
+    'notifications.apps.NotificationsConfig',
     # Core Django Apps
     'django.contrib.admin',
     'django.contrib.auth',

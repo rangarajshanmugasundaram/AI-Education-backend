@@ -18,4 +18,7 @@ urlpatterns = [
 
     # 🏫 Live Classroom Engine Routes (Tasks 1-10)
     path('api/classroom/', include('classroom.urls')),
+
+    # 📢 Notification Management System Routes
+    path('api/notifications/', include('notifications.urls')),
 ]
