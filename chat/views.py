@@ -1,133 +1,188 @@
 import datetime
 import uuid
-from rest_framework.views import APIView
-from rest_framework.response import Response
+from django.conf import settings
+import jwt
 from rest_framework import status
 from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 # Direct link to your active MongoDB client configuration
 from db_connection import db
 
+JWT_SECRET = getattr(
+    settings, 'SECRET_KEY', 'your-fallback-secret-key-change-in-production'
+)
+JWT_ALGORITHM = 'HS256'
 
-def validate_mock_auth(request):
-    """
-    Validates the mock token and extracts user metadata from the custom frontend headers.
-    Returns (user_context, None) if successful, or (None, error_response) if unauthorized.
-    """
-    auth_header = request.headers.get('Authorization', '')
-    email = request.headers.get('X-User-Email', '').strip().lower()
 
-    # 1. Enforce mock token validation rule
-    if not auth_header.startswith('Bearer mock-jwt-token-from-backend-xyz123'):
-        return None, Response(
-            {"detail": "Unauthorized access: Invalid or missing token verification."},
-            status=status.HTTP_401_UNAUTHORIZED
-        )
+def validate_jwt_auth(request, allowed_roles=None):
+  """Validates real JWT tokens from the Authorization header and extracts user payload."""
+  if allowed_roles is None:
+    allowed_roles = ['Student', 'Teacher', 'Trainer', 'Admin']
 
-    if not email:
-        return None, Response(
-            {"detail": "Authentication context missing: X-User-Email header required."},
-            status=status.HTTP_403_FORBIDDEN
-        )
+  auth_header = request.headers.get('Authorization', '')
 
-    username = email.split('@')[0]
-    user_context = {
-        "email": email,
-        "username": username,
-        "sender_name": username.capitalize()
-    }
-    return user_context, None
+  if not auth_header or not auth_header.startswith('Bearer '):
+    return None, Response(
+        {'detail': 'Unauthorized access: Missing Bearer token.'},
+        status=status.HTTP_401_UNAUTHORIZED,
+    )
+
+  token = auth_header.split(' ')[1]
+
+  try:
+    # Decode real JWT signature
+    payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    email = payload.get('email', '').strip().lower()
+    role = payload.get('role', 'Student')
+  except jwt.ExpiredSignatureError:
+    return None, Response(
+        {'detail': 'Unauthorized: Token has expired.'},
+        status=status.HTTP_401_UNAUTHORIZED,
+    )
+  except jwt.InvalidTokenError:
+    return None, Response(
+        {'detail': 'Unauthorized: Invalid token signature.'},
+        status=status.HTTP_401_UNAUTHORIZED,
+    )
+
+  # Check Role Authorization
+  normalized_user_role = str(role).strip().lower()
+  normalized_allowed_roles = [str(r).strip().lower() for r in allowed_roles]
+
+  if normalized_user_role not in normalized_allowed_roles:
+    return None, Response(
+        {
+            'detail': (
+                'Forbidden: You do not have permission to access chat'
+                ' resources.'
+            )
+        },
+        status=status.HTTP_403_FORBIDDEN,
+    )
+
+  # Retrieve sender display name from DB if available
+  user = db.users.find_one({'email': email})
+  sender_name = (
+      user.get('name') if user and user.get('name') else email.split('@')[0]
+  )
+
+  user_context = {
+      'email': email,
+      'role': role,
+      'sender_name': sender_name.capitalize(),
+  }
+  return user_context, None
 
 
 class SendMessageView(APIView):
-    """
-    POST /api/chat/send
-    Saves the incoming message document directly into your MongoDB chat collection.
-    """
-    permission_classes = [AllowAny]
+  """POST /api/chat/send
 
-    def post(self, request):
-        user, error_response = validate_mock_auth(request)
-        if error_response:
-            return error_response
+  Saves the incoming message document directly into your MongoDB chat
+  collection.
+  """
 
-        session_id = request.data.get('session_id', '').strip()
-        message = request.data.get('message', '').strip()
-        message_type = request.data.get('message_type', 'Text')
+  permission_classes = [AllowAny]
 
-        # Business Rule Validations
-        if not session_id:
-            return Response({"session_id": "Session ID cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
-        if not message:
-            return Response({"message": "Message cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
-        if len(message) > 1000:
-            return Response({"message": "Message size cannot exceed 1000 characters."}, status=status.HTTP_400_BAD_REQUEST)
+  def post(self, request):
+    user, error_response = validate_jwt_auth(
+        request, allowed_roles=['Student', 'Teacher', 'Trainer', 'Admin']
+    )
+    if error_response:
+      return error_response
 
-        # Build clean NoSQL document matching target payload requirements
-        chat_document = {
-            "message_id": str(uuid.uuid4()),
-            "session_id": session_id,
-            "sender_name": user["sender_name"],
-            "message": message,
-            "message_type": message_type,
-            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
-            "date_created": datetime.date.today().isoformat()
-        }
+    session_id = request.data.get('session_id', '').strip()
+    message = request.data.get('message', '').strip()
+    message_type = request.data.get('message_type', 'Text')
 
-        # Write record straight into MongoDB (Creates 'chat' collection if missing)
-        db.chat.insert_one(chat_document)
+    # Business Rule Validations
+    if not session_id:
+      return Response(
+          {'session_id': 'Session ID cannot be empty.'},
+          status=status.HTTP_400_BAD_REQUEST,
+      )
+    if not message:
+      return Response(
+          {'message': 'Message cannot be empty.'},
+          status=status.HTTP_400_BAD_REQUEST,
+      )
+    if len(message) > 1000:
+      return Response(
+          {'message': 'Message size cannot exceed 1000 characters.'},
+          status=status.HTTP_400_BAD_REQUEST,
+      )
 
-        # Strip standard BSON unique object reference pointer to avoid JSON generation errors
-        chat_document.pop('_id', None)
-        return Response(chat_document, status=status.HTTP_201_CREATED)
+    # Build NoSQL document matching target requirements
+    chat_document = {
+        'message_id': str(uuid.uuid4()),
+        'session_id': session_id,
+        'sender_id': user['email'],
+        'sender_name': user['sender_name'],
+        'sender_role': user['role'],
+        'message': message,
+        'message_type': message_type,
+        'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+        'date_created': datetime.date.today().isoformat(),
+    }
+
+    # Write record directly into MongoDB 'chat' collection
+    db.chat.insert_one(chat_document)
+
+    # Remove internal PyMongo BSON _id field for JSON serialization
+    chat_document.pop('_id', None)
+    return Response(chat_document, status=status.HTTP_201_CREATED)
 
 
 class SessionMessagesView(APIView):
-    """
-    GET /api/chat/session/<str:session_id>
-    Fetches room logs out of MongoDB sorted in clean chronological order.
-    """
-    permission_classes = [AllowAny]
+  """GET /api/chat/session/<str:session_id>
 
-    def get(self, request, session_id):
-        user, error_response = validate_mock_auth(request)
-        if error_response:
-            return error_response
+  Fetches room logs out of MongoDB sorted in clean chronological order.
+  """
 
-        # Find matching documents in your collection and sort ascending (1) by time
-        cursor = db.chat.find({"session_id": session_id}).sort("timestamp", 1)
+  permission_classes = [AllowAny]
 
-        messages = []
-        for doc in cursor:
-            doc.pop('_id', None)
-            messages.append(doc)
+  def get(self, request, session_id):
+    user, error_response = validate_jwt_auth(
+        request, allowed_roles=['Student', 'Teacher', 'Trainer', 'Admin']
+    )
+    if error_response:
+      return error_response
 
-        return Response(messages, status=status.HTTP_200_OK)
+    cursor = db.chat.find({'session_id': session_id}).sort('timestamp', 1)
+
+    messages = []
+    for doc in cursor:
+      doc.pop('_id', None)
+      messages.append(doc)
+
+    return Response(messages, status=status.HTTP_200_OK)
 
 
 class DeleteMessageView(APIView):
-    """
-    DELETE /api/chat/<str:message_id>
-    Removes target chat record from MongoDB collection.
-    """
-    permission_classes = [AllowAny]
+  """DELETE /api/chat/<str:message_id>
 
-    def delete(self, request, message_id):
-        user, error_response = validate_mock_auth(request)
-        if error_response:
-            return error_response
+  Removes target chat record from MongoDB collection (Trainers & Admins only).
+  """
 
-        # Role restriction checking targeting your custom frontend authentication
-        if 'trainer' not in user["email"]:
-            return Response(
-                {"error": "Forbidden: Only Trainers or Staff accounts possess message deletion access privileges."},
-                status=status.HTTP_403_FORBIDDEN
-            )
+  permission_classes = [AllowAny]
 
-        # Wipe matching message document directly out of MongoDB
-        result = db.chat.delete_one({"message_id": str(message_id)})
+  def delete(self, request, message_id):
+    user, error_response = validate_jwt_auth(
+        request, allowed_roles=['Trainer', 'Admin']
+    )
+    if error_response:
+      return error_response
 
-        if result.deleted_count > 0:
-            return Response({"detail": "Message successfully removed from MongoDB records."}, status=status.HTTP_200_OK)
+    result = db.chat.delete_one({'message_id': str(message_id)})
 
-        return Response({"error": "Message structural resource not found."}, status=status.HTTP_404_NOT_FOUND)
+    if result.deleted_count > 0:
+      return Response(
+          {'detail': 'Message successfully removed from MongoDB records.'},
+          status=status.HTTP_200_OK,
+      )
+
+    return Response(
+        {'error': 'Message structural resource not found.'},
+        status=status.HTTP_404_NOT_FOUND,
+    )
