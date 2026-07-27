@@ -16,9 +16,12 @@ urlpatterns = [
     # 🎨 Whiteboard Collaboration Routes
     path('api/whiteboard/', include('whiteboard.urls')),
 
-    # 🏫 Live Classroom Engine Routes (Tasks 1-10)
+    # 🏫 Live Classroom Engine Routes
     path('api/classroom/', include('classroom.urls')),
 
     # 📢 Notification Management System Routes
     path('api/notifications/', include('notifications.urls')),
+
+    # ⭐ Session Feedback & Rating System Routes
+    path('api/feedback/', include('feedback.urls')),
 ]

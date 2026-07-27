@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import timedelta
 import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -9,7 +10,6 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-73xhfnh+(61itd5918p
 
 DEBUG = True
 
-# Explicitly allow local hosts to prevent any routing blocks
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', '*']
 
 # Application definition
@@ -28,6 +28,8 @@ INSTALLED_APPS = [
     'whiteboard.apps.WhiteboardConfig',
     'classroom.apps.ClassroomConfig',
     'notifications.apps.NotificationsConfig',
+    'feedback',
+
     # Core Django Apps
     'django.contrib.admin',
     'django.contrib.auth',
@@ -38,7 +40,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',  # Preflight requests handler (Must be at the top)
+    'corsheaders.middleware.CorsMiddleware',  # Preflight requests handler (Must be at top)
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -47,6 +49,13 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+# 🌟 REST FRAMEWORK CONFIGURATION (Prevents global 401 blocks)
+REST_FRAMEWORK = {
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.AllowAny',
+    ),
+}
 
 ROOT_URLCONF = 'ai_education.urls'
 
@@ -70,7 +79,7 @@ WSGI_APPLICATION = 'ai_education.wsgi.application'
 # Point Django Channels to the ASGI entrypoint
 ASGI_APPLICATION = 'ai_education.asgi.application'
 
-# Channel Layers (In-memory layer for local development and testing)
+# Channel Layers
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels.layers.InMemoryChannelLayer',
@@ -108,7 +117,7 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', 'rangarajshanmugasundaram@gmail.com')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 
-# --- GLOBAL CORS CONFIGURATION FOR FRONTEND HANDSHAKE ---
+# --- GLOBAL CORS CONFIGURATION ---
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
