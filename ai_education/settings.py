@@ -12,6 +12,8 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', '*']
 
+RECONNECT_TIMEOUT_SECONDS = 120
+
 # Application definition
 INSTALLED_APPS = [
     'daphne',
@@ -50,7 +52,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-# 🌟 REST FRAMEWORK CONFIGURATION (Prevents global 401 blocks)
+# REST FRAMEWORK CONFIGURATION (Prevents global 401 blocks)
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.AllowAny',
@@ -104,7 +106,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 # Internationalization
 LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Kolkata'
 USE_I18N = True
 USE_TZ = True
 STATIC_URL = 'static/'

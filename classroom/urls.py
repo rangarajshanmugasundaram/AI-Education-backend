@@ -8,6 +8,8 @@ urlpatterns = [
     path('<str:id>/end/', views.end_session, name='end_session'),
     path('<str:id>/lock/', views.toggle_session_lock, name='toggle_lock'),
 
+    path('<str:id>/recovery-state/', views.get_recovery_state, name='get_recovery_state'),
+
     # Hands
     path('<str:id>/raise-hand/', views.raise_hand, name='raise_hand'),
     path('<str:id>/lower-hand/', views.lower_hand, name='lower_hand'),

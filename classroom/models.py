@@ -67,3 +67,25 @@ class ActivityLog(models.Model):
 
     class Meta:
         ordering = ['-timestamp']
+
+
+# 🌟 NEW: Session Reconnect Log Model for Session Recovery Task
+class SessionReconnectLog(models.Model):
+    STATUS_CHOICES = (
+        ('Reconnecting', 'Reconnecting'),
+        ('Restored', 'Restored'),
+        ('TimedOut', 'TimedOut'),
+    )
+
+    session = models.ForeignKey(ClassroomSession, related_name="reconnect_logs", on_delete=models.CASCADE)
+    user_email = models.EmailField()
+    user_role = models.CharField(max_length=20, default='Trainer')
+    disconnected_at = models.DateTimeField(auto_now_add=True)
+    reconnected_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Reconnecting')
+
+    class Meta:
+        ordering = ['-disconnected_at']
+
+    def __str__(self):
+        return f"{self.user_email} - {self.status} ({self.session.id})"
