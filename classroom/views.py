@@ -1,3 +1,5 @@
+import uuid
+from datetime import datetime, timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -11,7 +13,7 @@ from .serializers import (
     WaitingRoomUserSerializer, ActivityLogSerializer
 )
 
-# MongoDB Connection instance for fetching restored chat messages
+# MongoDB Connection instance
 from db_connection import db
 
 
@@ -25,6 +27,22 @@ def broadcast_ws(session_id, event_type, payload):
             'payload': payload
         }
     )
+
+
+# 🌟 Helper to push real-time system alerts to the global notification channel
+def broadcast_global_notification(notification_doc):
+    try:
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            "notifications_global",
+            {
+                'type': 'broadcast_event',
+                'event_type': 'NEW_NOTIFICATION',
+                'payload': notification_doc
+            }
+        )
+    except Exception as err:
+        print(f"[Global Notification Broadcast Error]: {err}")
 
 
 def log_action(session, action_text):
@@ -105,6 +123,8 @@ def get_recovery_state(request, id):
     }, status=status.HTTP_200_OK)
 
 
+# --- Session Control Views ---
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def start_session(request, id):
@@ -112,8 +132,35 @@ def start_session(request, id):
     session.is_live = True
     session.save()
     log_action(session, "Trainer started live session")
+
+    # 1. Local classroom websocket broadcast
     broadcast_ws(id, 'SESSION_CONTROL', {'isLive': True, 'action': 'started'})
-    return Response({'status': 'Session Started'})
+
+    # 🌟 2. Create notification in MongoDB & trigger global WebSocket event
+    now_iso = datetime.now(timezone.utc).isoformat()
+    notification_doc = {
+        'id': str(uuid.uuid4()),
+        'title': f'🔴 Live Session Started ({id})',
+        'message': f'Trainer has initiated the live classroom ({id}). Click to join now!',
+        'sender_id': 'trainer@aieducation.com',
+        'sender_role': 'Trainer',
+        'recipient_type': 'All',
+        'batch_id': str(id),
+        'priority': 'Emergency',  # Standard trigger for frontend Join button
+        'read_status': False,
+        'is_deleted': False,
+        'created_at': now_iso,
+        'updated_at': now_iso,
+    }
+
+    try:
+        db.notifications.insert_one(notification_doc)
+        notification_doc.pop('_id', None)
+        broadcast_global_notification(notification_doc)
+    except Exception as err:
+        print(f"[Database/Notification Error]: {err}")
+
+    return Response({'status': 'Session Started', 'notification': notification_doc}, status=status.HTTP_200_OK)
 
 
 @api_view(['POST'])
@@ -123,8 +170,35 @@ def end_session(request, id):
     session.is_live = False
     session.save()
     log_action(session, "Trainer ended live session")
+
+    # 1. Local classroom websocket broadcast
     broadcast_ws(id, 'SESSION_CONTROL', {'isLive': False, 'action': 'ended'})
-    return Response({'status': 'Session Ended'})
+
+    # 🌟 2. Broadcast Session Ended notification to revert student join button
+    now_iso = datetime.now(timezone.utc).isoformat()
+    notification_doc = {
+        'id': str(uuid.uuid4()),
+        'title': f'⏹️ Live Session Ended ({id})',
+        'message': f'The live classroom session ({id}) has been closed by the trainer.',
+        'sender_id': 'trainer@aieducation.com',
+        'sender_role': 'Trainer',
+        'recipient_type': 'All',
+        'batch_id': str(id),
+        'priority': 'Low',
+        'read_status': False,
+        'is_deleted': False,
+        'created_at': now_iso,
+        'updated_at': now_iso,
+    }
+
+    try:
+        db.notifications.insert_one(notification_doc)
+        notification_doc.pop('_id', None)
+        broadcast_global_notification(notification_doc)
+    except Exception as err:
+        print(f"[Database/Notification Error]: {err}")
+
+    return Response({'status': 'Session Ended'}, status=status.HTTP_200_OK)
 
 
 @api_view(['POST'])

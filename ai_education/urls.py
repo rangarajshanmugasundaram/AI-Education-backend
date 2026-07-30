@@ -24,4 +24,7 @@ urlpatterns = [
 
     # ⭐ Session Feedback & Rating System Routes
     path('api/feedback/', include('feedback.urls')),
+
+    # 🎬 Session Recording Management & Playback Routes
+    path('api/recordings/', include('recordings.urls')),
 ]

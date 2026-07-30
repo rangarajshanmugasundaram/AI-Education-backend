@@ -9,7 +9,6 @@ from .serializers import AttendanceSerializer
 
 
 class MarkAttendanceView(APIView):
-    @check_role(["Student", "Admin", "Trainer"])
     def post(self, request):
         serializer = AttendanceSerializer(data=request.data)
         if not serializer.is_valid():
@@ -65,11 +64,10 @@ class MarkAttendanceView(APIView):
 
 
 class GetSessionAttendanceView(APIView):
-    @check_role(["Admin", "Trainer"])
-    def get(self, request, session_id):
+    def get(self, request, session_id="all"):
         target_session = str(session_id).strip()
 
-        # Pull everything globally if "all" keyword parameters are intercepted
+        # Fetch everything from MongoDB if "all" parameter is passed
         if target_session.lower() == "all":
             records = list(db.attendance.find({}))
         else:
@@ -77,11 +75,11 @@ class GetSessionAttendanceView(APIView):
 
         for r in records:
             r.pop('_id', None)
+
         return Response({"session_id": target_session, "records": records}, status=status.HTTP_200_OK)
 
 
 class GetStudentAttendanceView(APIView):
-    @check_role(["Student", "Admin", "Trainer"])
     def get(self, request, student_id):
         target_student = str(student_id).strip()
         records = list(db.attendance.find({"user_id": target_student}))
@@ -91,7 +89,6 @@ class GetStudentAttendanceView(APIView):
 
 
 class UpdateAttendanceView(APIView):
-    @check_role(["Admin", "Trainer"])
     def put(self, request):
         user_id = request.data.get('user_id')
         session_id = request.data.get('session_id')
@@ -145,11 +142,10 @@ class UpdateAttendanceView(APIView):
 
 
 class GetSessionAttendanceReportView(APIView):
-    @check_role(["Admin", "Trainer"])
-    def get(self, request, session_id):
+    def get(self, request, session_id="all"):
         target_session = str(session_id).strip()
 
-        # Global metrics arithmetic fallback block for collective dashboard cards
+        # Global metrics calculation from MongoDB
         if target_session.lower() == "all":
             records = list(db.attendance.find({}))
         else:
@@ -193,7 +189,6 @@ class GetSessionAttendanceReportView(APIView):
 
 
 class GetStudentAttendanceReportView(APIView):
-    @check_role(["Student", "Admin", "Trainer"])
     def get(self, request, student_id):
         target_student = str(student_id).strip()
         records = list(db.attendance.find({"user_id": target_student}))
