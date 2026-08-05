@@ -30,6 +30,8 @@ INSTALLED_APPS = [
     'notifications.apps.NotificationsConfig',
     'feedback',
     'recordings.apps.RecordingsConfig',
+    'admin_dashboard.apps.AdminDashboardConfig',
+    'user_management.apps.UserManagementConfig',
 
     # Core Django Apps
     'django.contrib.admin',

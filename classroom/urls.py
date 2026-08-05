@@ -2,6 +2,11 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    # 🌟 MUST BE TOP-MOST: Collection routes for Postman POST creation & GET listing
+    path('sessions/', views.ClassroomSessionListCreateView.as_view(), name='classroom_sessions_root'),
+    path('sessions', views.ClassroomSessionListCreateView.as_view(), name='classroom_sessions_noslash'),
+
+    # --- Your Existing Routes Below ---
     # Session
     path('<str:id>/', views.get_session_details, name='session_details'),
     path('<str:id>/start/', views.start_session, name='start_session'),

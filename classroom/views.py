@@ -4,6 +4,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.views import APIView  # 🌟 REQUIRED IMPORT FOR APIView
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 
@@ -29,7 +30,6 @@ def broadcast_ws(session_id, event_type, payload):
     )
 
 
-# 🌟 Helper to push real-time system alerts to the global notification channel
 def broadcast_global_notification(notification_doc):
     try:
         channel_layer = get_channel_layer()
@@ -90,15 +90,9 @@ def get_session_details(request, id):
     return Response(serializer.data)
 
 
-# 🌟 NEW: Live Session Recovery State Aggregation Endpoint
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def get_recovery_state(request, id):
-    """
-    GET /api/classroom/<id>/recovery-state/
-    Fetches full classroom state payload (Participants, Raised Hands, Chat, Logs, Media state)
-    to restore UI when trainer or student reconnects after network drop.
-    """
     session, _ = ClassroomSession.objects.get_or_create(id=id)
 
     participants = Participant.objects.filter(session=session)
@@ -106,7 +100,6 @@ def get_recovery_state(request, id):
     waiting_users = WaitingRoomUser.objects.filter(session=session)
     logs = ActivityLog.objects.filter(session=session)
 
-    # Fetch Chat history directly from MongoDB 'chat' collection
     chat_cursor = db.chat.find({'session_id': id}).sort('timestamp', 1)
     chat_logs = []
     for doc in chat_cursor:
@@ -133,10 +126,8 @@ def start_session(request, id):
     session.save()
     log_action(session, "Trainer started live session")
 
-    # 1. Local classroom websocket broadcast
     broadcast_ws(id, 'SESSION_CONTROL', {'isLive': True, 'action': 'started'})
 
-    # 🌟 2. Create notification in MongoDB & trigger global WebSocket event
     now_iso = datetime.now(timezone.utc).isoformat()
     notification_doc = {
         'id': str(uuid.uuid4()),
@@ -146,7 +137,7 @@ def start_session(request, id):
         'sender_role': 'Trainer',
         'recipient_type': 'All',
         'batch_id': str(id),
-        'priority': 'Emergency',  # Standard trigger for frontend Join button
+        'priority': 'Emergency',
         'read_status': False,
         'is_deleted': False,
         'created_at': now_iso,
@@ -171,10 +162,8 @@ def end_session(request, id):
     session.save()
     log_action(session, "Trainer ended live session")
 
-    # 1. Local classroom websocket broadcast
     broadcast_ws(id, 'SESSION_CONTROL', {'isLive': False, 'action': 'ended'})
 
-    # 🌟 2. Broadcast Session Ended notification to revert student join button
     now_iso = datetime.now(timezone.utc).isoformat()
     notification_doc = {
         'id': str(uuid.uuid4()),
@@ -413,3 +402,74 @@ def reject_join_request(request, id, userId):
 def get_activity_logs(request, id):
     logs = ActivityLog.objects.filter(session_id=id)
     return Response(ActivityLogSerializer(logs, many=True).data)
+
+
+# 🌟 CLASS-BASED VIEW FOR POSTMAN INGESTION
+class ClassroomSessionListCreateView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        try:
+            data = request.data
+            sessions_col = db['sessions']
+
+            now_iso = datetime.now(timezone.utc).isoformat()
+            session_id = str(uuid.uuid4())
+
+            new_session = {
+                "_id": session_id,
+                "title": data.get("title", "Classroom Session"),
+                "sessionName": data.get("sessionName", data.get("title", "Classroom Session")),
+                "trainerName": data.get("trainerName", "Assigned Trainer"),
+                "trainer_email": data.get("trainer_email", ""),
+                "status": data.get("status", "completed"),
+                "scheduled_at": data.get("scheduled_at", now_iso),
+                "updatedAt": now_iso,
+                "created_at": datetime.now(timezone.utc)
+            }
+
+            sessions_col.insert_one(new_session)
+
+            return Response({
+                "success": True,
+                "message": "Session created successfully in MongoDB",
+                "_id": session_id,
+                "session": {
+                    "title": new_session["title"],
+                    "sessionName": new_session["sessionName"],
+                    "trainerName": new_session["trainerName"],
+                    "trainer_email": new_session["trainer_email"],
+                    "status": new_session["status"],
+                    "scheduled_at": new_session["scheduled_at"],
+                    "updatedAt": new_session["updatedAt"]
+                }
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({"success": False, "error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def get(self, request):
+        try:
+            sessions_col = db['sessions']
+            cursor = sessions_col.find(
+                {},
+                {'_id': 1, 'title': 1, 'sessionName': 1, 'trainerName': 1, 'trainer_email': 1, 'status': 1,
+                 'scheduled_at': 1, 'updatedAt': 1, 'created_at': 1}
+            ).sort('_id', -1)
+
+            sessions = []
+            for s in cursor:
+                sessions.append({
+                    "_id": str(s.get('_id')),
+                    "title": s.get("title", ""),
+                    "sessionName": s.get("sessionName", s.get("title", "")),
+                    "trainerName": s.get("trainerName", ""),
+                    "trainer_email": s.get("trainer_email", ""),
+                    "status": s.get("status", "completed"),
+                    "scheduled_at": s.get("scheduled_at", ""),
+                    "updatedAt": s.get("updatedAt") or s.get("created_at") or datetime.now(timezone.utc).isoformat()
+                })
+
+            return Response(sessions, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
