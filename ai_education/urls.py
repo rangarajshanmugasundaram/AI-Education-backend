@@ -10,8 +10,11 @@ urlpatterns = [
     # 📊 Admin Dashboard Route 
     path('api/admin/', include('admin_dashboard.urls')),
 
-    # 👥 User Management Routes (Task 2)
+    # 👥 User Management Routes 
     path('api/users/', include('user_management.urls')),
+
+    # 📚 Course Management Routes
+    path('api/courses/', include('course_management.urls')),
 
     # 📝 Attendance Routes
     path('api/attendance/', include('attendance.urls')),

@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     'recordings.apps.RecordingsConfig',
     'admin_dashboard.apps.AdminDashboardConfig',
     'user_management.apps.UserManagementConfig',
+    'course_management.apps.CourseManagementConfig',
 
     # Core Django Apps
     'django.contrib.admin',
