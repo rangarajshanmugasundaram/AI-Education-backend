@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     'admin_dashboard.apps.AdminDashboardConfig',
     'user_management.apps.UserManagementConfig',
     'course_management.apps.CourseManagementConfig',
+    'batch_management.apps.BatchManagementConfig',
 
     # Core Django Apps
     'django.contrib.admin',
