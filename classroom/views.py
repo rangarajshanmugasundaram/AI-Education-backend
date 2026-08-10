@@ -4,7 +4,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.views import APIView  # 🌟 REQUIRED IMPORT FOR APIView
+from rest_framework.views import APIView
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 
@@ -13,10 +13,74 @@ from .serializers import (
     ClassroomSessionSerializer, ParticipantSerializer,
     WaitingRoomUserSerializer, ActivityLogSerializer
 )
+from .services import LiveMonitoringService
 
 # MongoDB Connection instance
 from db_connection import db
 
+
+# 🔴 ==========================================
+# 🔴 TASK 5: ADMIN LIVE MONITORING API VIEWS
+# 🔴 ==========================================
+
+class AdminLiveSessionsView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        """API Endpoint: Fetch all live sessions with details like trainer name, batch, participants, and status."""
+        sessions = LiveMonitoringService.get_active_live_sessions()
+        return Response({'success': True, 'count': len(sessions), 'sessions': sessions}, status=status.HTTP_200_OK)
+
+
+class AdminForceEndSessionView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, session_id):
+        """API Endpoint: Forcefully end an ongoing live session."""
+        success = LiveMonitoringService.force_end_session(session_id)
+        if success:
+            return Response({'success': True, 'message': f'Live session {session_id} forcibly terminated.'},
+                            status=status.HTTP_200_OK)
+        return Response({'success': False, 'message': 'Active session not found or already ended.'},
+                        status=status.HTTP_404_NOT_FOUND)
+
+
+class AdminSessionStatsView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, session_id=None):
+        """API Endpoint: Session duration, participants, and performance statistics."""
+        if session_id:
+            stats = LiveMonitoringService.get_single_session_stats(session_id)
+            if stats:
+                return Response({'success': True, 'data': stats}, status=status.HTTP_200_OK)
+            return Response({'success': False, 'message': 'Session stats not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        global_stats = LiveMonitoringService.get_global_live_stats()
+        return Response({'success': True, 'stats': global_stats}, status=status.HTTP_200_OK)
+
+
+class AdminAttendanceSummaryView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, session_id):
+        """API Endpoint: Attendance summary with present, absent, late, and join/leave times."""
+        stats = LiveMonitoringService.get_single_session_stats(session_id)
+        if stats:
+            return Response({
+                'success': True,
+                'session_id': session_id,
+                'attendance_summary': stats['attendance_summary'],
+                'participants': stats['participants']
+            }, status=status.HTTP_200_OK)
+
+        return Response({'success': False, 'message': 'Session attendance summary not found'},
+                        status=status.HTTP_404_NOT_FOUND)
+
+
+# ==========================================
+# HELPER FUNCTIONS
+# ==========================================
 
 def broadcast_ws(session_id, event_type, payload):
     channel_layer = get_channel_layer()
@@ -63,7 +127,8 @@ def broadcast_participant_list(session):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def get_session_details(request, id):
-    session, _ = ClassroomSession.objects.get_or_create(id=id)
+    # Ensures SQLite ORM session exists even if created via MongoDB/Postman
+    session, _ = ClassroomSession.objects.get_or_create(id=id, defaults={'is_live': True})
 
     user_email = request.headers.get('X-User-Email', '').strip().lower()
 
@@ -71,6 +136,7 @@ def get_session_details(request, id):
         name_part = user_email.split('@')[0].capitalize()
         user_role = 'Trainer' if 'trainer' in user_email else 'Student'
 
+        # Creates participant in SQLite ORM
         participant, created = Participant.objects.get_or_create(
             session=session,
             email=user_email,
@@ -82,6 +148,27 @@ def get_session_details(request, id):
                 'is_camera_on': False,
             }
         )
+
+        # Syncs participant record into MongoDB 'classroom_participants' collection
+        try:
+            db['classroom_participants'].update_one(
+                {'session_id': str(id), 'email': user_email},
+                {'$set': {
+                    'session_id': str(id),
+                    'name': name_part,
+                    'email': user_email,
+                    'role': user_role,
+                    'status': 'Active',
+                    'is_muted': True,
+                    'is_camera_on': False,
+                    'has_raised_hand': False,
+                    'updated_at': datetime.now(timezone.utc)
+                }},
+                upsert=True
+            )
+        except Exception as err:
+            print(f"[MongoDB Sync Error]: {err}")
+
         if created:
             log_action(session, f"{participant.name} ({participant.role}) joined")
             broadcast_participant_list(session)
@@ -207,7 +294,7 @@ def toggle_session_lock(request, id):
 @permission_classes([AllowAny])
 def raise_hand(request, id):
     email = request.data.get('email')
-    session = ClassroomSession.objects.get(id=id)
+    session, _ = ClassroomSession.objects.get_or_create(id=id)
     participant, _ = Participant.objects.get_or_create(session=session, email=email)
     participant.has_raised_hand = not participant.has_raised_hand
     participant.save()
@@ -224,7 +311,7 @@ def raise_hand(request, id):
 @permission_classes([AllowAny])
 def lower_hand(request, id):
     email = request.data.get('email')
-    session = ClassroomSession.objects.get(id=id)
+    session, _ = ClassroomSession.objects.get_or_create(id=id)
     participant = Participant.objects.get(session=session, email=email)
     participant.has_raised_hand = False
     participant.save()
@@ -237,7 +324,7 @@ def lower_hand(request, id):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def dismiss_hand_request(request, id, studentId):
-    session = ClassroomSession.objects.get(id=id)
+    session, _ = ClassroomSession.objects.get_or_create(id=id)
     participant = Participant.objects.get(session=session, id=studentId)
     participant.has_raised_hand = False
     participant.save()
@@ -259,10 +346,18 @@ def get_participants(request, id):
 @api_view(['DELETE'])
 @permission_classes([AllowAny])
 def remove_participant(request, id, participantId):
-    session = ClassroomSession.objects.get(id=id)
+    session, _ = ClassroomSession.objects.get_or_create(id=id)
     participant = Participant.objects.get(session=session, id=participantId)
     participant.status = 'Removed'
     participant.save()
+
+    try:
+        db['classroom_participants'].update_one(
+            {'session_id': str(id), 'email': participant.email},
+            {'$set': {'status': 'Removed'}}
+        )
+    except Exception as err:
+        print(f"[MongoDB Status Update Warning]: {err}")
 
     log_action(session, f"Trainer removed {participant.name}")
     broadcast_participant_list(session)
@@ -272,10 +367,18 @@ def remove_participant(request, id, participantId):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def allow_rejoin(request, id, participantId):
-    session = ClassroomSession.objects.get(id=id)
+    session, _ = ClassroomSession.objects.get_or_create(id=id)
     participant = Participant.objects.get(session=session, id=participantId)
     participant.status = 'Active'
     participant.save()
+
+    try:
+        db['classroom_participants'].update_one(
+            {'session_id': str(id), 'email': participant.email},
+            {'$set': {'status': 'Active'}}
+        )
+    except Exception as err:
+        print(f"[MongoDB Status Update Warning]: {err}")
 
     log_action(session, f"Trainer permitted {participant.name} to rejoin")
     broadcast_participant_list(session)
@@ -288,7 +391,7 @@ def allow_rejoin(request, id, participantId):
 @permission_classes([AllowAny])
 def toggle_self_mute(request, id):
     email = request.data.get('email')
-    session = ClassroomSession.objects.get(id=id)
+    session, _ = ClassroomSession.objects.get_or_create(id=id)
     participant = Participant.objects.get(session=session, email=email)
     participant.is_muted = not participant.is_muted
     participant.save()
@@ -301,7 +404,7 @@ def toggle_self_mute(request, id):
 @permission_classes([AllowAny])
 def toggle_self_camera(request, id):
     email = request.data.get('email')
-    session = ClassroomSession.objects.get(id=id)
+    session, _ = ClassroomSession.objects.get_or_create(id=id)
     participant = Participant.objects.get(session=session, email=email)
     participant.is_camera_on = not participant.is_camera_on
     participant.save()
@@ -313,7 +416,7 @@ def toggle_self_camera(request, id):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def mute_participant(request, id, participantId):
-    session = ClassroomSession.objects.get(id=id)
+    session, _ = ClassroomSession.objects.get_or_create(id=id)
     participant = Participant.objects.get(session=session, id=participantId)
     participant.is_muted = True
     participant.save()
@@ -338,7 +441,7 @@ def mute_all_participants(request, id):
 @api_view(['PUT'])
 @permission_classes([AllowAny])
 def update_participant_permissions(request, id, participantId):
-    session = ClassroomSession.objects.get(id=id)
+    session, _ = ClassroomSession.objects.get_or_create(id=id)
     perms = request.data.get('permissions', {})
     participant = Participant.objects.get(session=session, id=participantId)
     participant.can_speak = perms.get('canSpeak', participant.can_speak)
@@ -362,7 +465,7 @@ def get_waiting_room(request, id):
 @permission_classes([AllowAny])
 def approve_join_request(request, id, userId):
     waiting_user = WaitingRoomUser.objects.get(id=userId)
-    session = ClassroomSession.objects.get(id=id)
+    session, _ = ClassroomSession.objects.get_or_create(id=id)
 
     Participant.objects.create(
         session=session,
@@ -404,7 +507,7 @@ def get_activity_logs(request, id):
     return Response(ActivityLogSerializer(logs, many=True).data)
 
 
-# 🌟 CLASS-BASED VIEW FOR POSTMAN INGESTION
+# 🌟 CLASS-BASED VIEW FOR MONGO DB INGESTION & LISTING
 class ClassroomSessionListCreateView(APIView):
     permission_classes = [AllowAny]
 
@@ -418,31 +521,37 @@ class ClassroomSessionListCreateView(APIView):
 
             new_session = {
                 "_id": session_id,
+                "id": session_id,
                 "title": data.get("title", "Classroom Session"),
                 "sessionName": data.get("sessionName", data.get("title", "Classroom Session")),
                 "trainerName": data.get("trainerName", "Assigned Trainer"),
                 "trainer_email": data.get("trainer_email", ""),
-                "status": data.get("status", "completed"),
+                "batch_code": data.get("batch_code", "BATCH-2026-A"),
+                "course_name": data.get("course_name", "General Curriculum"),
+                "status": data.get("status", "live"),
+                "is_live": True,
+                "is_locked": False,
+                "allow_unmute": True,
+                "total_batch_students": data.get("total_batch_students", 25),
                 "scheduled_at": data.get("scheduled_at", now_iso),
                 "updatedAt": now_iso,
                 "created_at": datetime.now(timezone.utc)
             }
 
+            # Write to MongoDB
             sessions_col.insert_one(new_session)
+
+            # Mirror session creation in SQLite ORM to prevent missing key errors
+            ClassroomSession.objects.get_or_create(
+                id=session_id,
+                defaults={'title': new_session["title"], 'is_live': True}
+            )
 
             return Response({
                 "success": True,
-                "message": "Session created successfully in MongoDB",
+                "message": "Live session saved to MongoDB successfully",
                 "_id": session_id,
-                "session": {
-                    "title": new_session["title"],
-                    "sessionName": new_session["sessionName"],
-                    "trainerName": new_session["trainerName"],
-                    "trainer_email": new_session["trainer_email"],
-                    "status": new_session["status"],
-                    "scheduled_at": new_session["scheduled_at"],
-                    "updatedAt": new_session["updatedAt"]
-                }
+                "session": new_session
             }, status=status.HTTP_201_CREATED)
 
         except Exception as e:
@@ -454,7 +563,7 @@ class ClassroomSessionListCreateView(APIView):
             cursor = sessions_col.find(
                 {},
                 {'_id': 1, 'title': 1, 'sessionName': 1, 'trainerName': 1, 'trainer_email': 1, 'status': 1,
-                 'scheduled_at': 1, 'updatedAt': 1, 'created_at': 1}
+                 'batch_code': 1, 'course_name': 1, 'is_live': 1, 'scheduled_at': 1, 'updatedAt': 1, 'created_at': 1}
             ).sort('_id', -1)
 
             sessions = []
@@ -465,7 +574,10 @@ class ClassroomSessionListCreateView(APIView):
                     "sessionName": s.get("sessionName", s.get("title", "")),
                     "trainerName": s.get("trainerName", ""),
                     "trainer_email": s.get("trainer_email", ""),
+                    "batch_code": s.get("batch_code", "BATCH-2026-A"),
+                    "course_name": s.get("course_name", "General Curriculum"),
                     "status": s.get("status", "completed"),
+                    "is_live": s.get("is_live", False),
                     "scheduled_at": s.get("scheduled_at", ""),
                     "updatedAt": s.get("updatedAt") or s.get("created_at") or datetime.now(timezone.utc).isoformat()
                 })

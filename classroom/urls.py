@@ -6,6 +6,13 @@ urlpatterns = [
     path('sessions/', views.ClassroomSessionListCreateView.as_view(), name='classroom_sessions_root'),
     path('sessions', views.ClassroomSessionListCreateView.as_view(), name='classroom_sessions_noslash'),
 
+    # 🔴 TASK 5: ADMIN LIVE SESSION MONITORING ROUTES
+    path('live-monitoring/', views.AdminLiveSessionsView.as_view(), name='admin-live-sessions'),
+    path('live-monitoring/stats/', views.AdminSessionStatsView.as_view(), name='admin-live-stats-global'),
+    path('live-monitoring/<str:session_id>/stats/', views.AdminSessionStatsView.as_view(), name='admin-live-stats-session'),
+    path('live-monitoring/<str:session_id>/attendance-summary/', views.AdminAttendanceSummaryView.as_view(), name='admin-attendance-summary'),
+    path('live-monitoring/<str:session_id>/force-end/', views.AdminForceEndSessionView.as_view(), name='admin-force-end-session'),
+
     # --- Your Existing Routes Below ---
     # Session
     path('<str:id>/', views.get_session_details, name='session_details'),
