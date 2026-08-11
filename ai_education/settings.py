@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     'user_management.apps.UserManagementConfig',
     'course_management.apps.CourseManagementConfig',
     'batch_management.apps.BatchManagementConfig',
+    'exams',
 
     # Core Django Apps
     'django.contrib.admin',

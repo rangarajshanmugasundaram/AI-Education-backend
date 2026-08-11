@@ -16,8 +16,11 @@ urlpatterns = [
     # 📚 Course Management Routes
     path('api/courses/', include('course_management.urls')),
 
-    # 🎓 Batch Management Routes (Task 4)
+    # 🎓 Batch Management Routes
     path('api/batches/', include('batch_management.urls')),
+
+    # 📝 Exam Management Routes
+    path('api/exams/', include('exams.urls')),
 
     # 📝 Attendance Routes
     path('api/attendance/', include('attendance.urls')),
