@@ -22,6 +22,9 @@ urlpatterns = [
     # 📝 Exam Management Routes
     path('api/exams/', include('exams.urls')),
 
+    # 📌 Assignment Management Routes
+    path('api/assignments/', include('assignments.urls')),
+
     # 📝 Attendance Routes
     path('api/attendance/', include('attendance.urls')),
 
