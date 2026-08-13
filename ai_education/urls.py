@@ -25,6 +25,9 @@ urlpatterns = [
     # 📌 Assignment Management Routes
     path('api/assignments/', include('assignments.urls')),
 
+    # 📜 Certificate Management Routes (Task 8)
+    path('api/certificates/', include('certificates.urls')),
+
     # 📝 Attendance Routes
     path('api/attendance/', include('attendance.urls')),
 

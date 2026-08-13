@@ -27,7 +27,10 @@ class UserService:
 
         # Role filter
         if role_filter and role_filter.lower() != 'all':
-            query['role'] = {'$regex': f'^{role_filter}$', '$options': 'i'}
+            query['$or'] = [
+                {'role': {'$regex': f'^{role_filter}$', '$options': 'i'}},
+                {'previous_role': {'$regex': f'^{role_filter}$', '$options': 'i'}}
+            ]
 
         # Status filter
         if status_filter is not None and status_filter != 'all':
@@ -45,13 +48,17 @@ class UserService:
             created = doc.get('createdAt') or doc.get('created_at')
             created_str = created.isoformat() if isinstance(created, datetime) else str(created or '')
 
+            # Display original role in User Management table even when inactive
+            current_role = doc.get('role', 'Student')
+            display_role = doc.get('previous_role') if current_role == 'Inactive' else current_role
+
             users.append({
                 '_id': str(doc['_id']),
                 'name': full_name,
                 'first_name': doc.get('first_name', ''),
                 'last_name': doc.get('last_name', ''),
                 'email': doc.get('email', ''),
-                'role': doc.get('role', 'Student'),
+                'role': display_role,
                 'isActive': doc.get('isActive', True),
                 'createdAt': created_str
             })
@@ -69,17 +76,19 @@ class UserService:
         full_name = f"{data.get('first_name', '')} {data.get('last_name', '')}".strip()
         now = datetime.now(timezone.utc)
 
-        # 🌟 HASH PASSWORD WITH BCRYPT
+        # Hash password using bcrypt
         raw_password = data['password']
         hashed_password = bcrypt.hashpw(raw_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
+        user_role = data.get('role', 'Student')
         user_doc = {
             'name': full_name,
             'first_name': data.get('first_name', ''),
             'last_name': data.get('last_name', ''),
             'email': email_clean,
-            'password': hashed_password,  # Stored as hashed bcrypt string
-            'role': data.get('role', 'Student'),
+            'password': hashed_password,
+            'role': user_role,
+            'previous_role': user_role,
             'isActive': data.get('isActive', True),
             'createdAt': now,
             'updatedAt': now
@@ -105,6 +114,7 @@ class UserService:
 
         if 'role' in data:
             update_fields['role'] = data['role']
+            update_fields['previous_role'] = data['role']
         if 'isActive' in data:
             update_fields['isActive'] = data['isActive']
 
@@ -128,8 +138,35 @@ class UserService:
         if not user:
             return None
 
-        new_status = not user.get('isActive', True)
-        collection.update_one(query, {'$set': {'isActive': new_status, 'updatedAt': datetime.now(timezone.utc)}})
+        current_status = user.get('isActive', True)
+        new_status = not current_status
+
+        if not new_status:
+            # 🛑 DEACTIVATION (Soft Delete)
+            # Store current active role into 'previous_role' and set active role to 'Inactive'
+            current_role = user.get('role', 'Student')
+            previous_role = current_role if current_role != 'Inactive' else user.get('previous_role', 'Student')
+
+            update_payload = {
+                'isActive': False,
+                'role': 'Inactive',
+                'previous_role': previous_role,
+                'updatedAt': datetime.now(timezone.utc)
+            }
+        else:
+            # 🌟 REACTIVATION
+            # Restore original role from 'previous_role'
+            restored_role = user.get('previous_role', 'Student')
+            if restored_role == 'Inactive':
+                restored_role = 'Student'
+
+            update_payload = {
+                'isActive': True,
+                'role': restored_role,
+                'updatedAt': datetime.now(timezone.utc)
+            }
+
+        collection.update_one(query, {'$set': update_payload})
         return new_status
 
     @classmethod
@@ -140,7 +177,6 @@ class UserService:
         except Exception:
             query = {'_id': user_id}
 
-        # 🌟 HASH NEW PASSWORD WITH BCRYPT
         hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
         result = collection.update_one(

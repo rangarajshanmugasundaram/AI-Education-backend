@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     'batch_management.apps.BatchManagementConfig',
     'exams',
     'assignments',
+    'certificates',
 
     # Core Django Apps
     'django.contrib.admin',

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import random
 import bcrypt
 from django.conf import settings
@@ -9,7 +9,6 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from db_connection import db
-
 from .serializers import UserSerializer
 
 # Fetch secret key from settings
@@ -40,6 +39,7 @@ class RegisterView(APIView):
       ).decode('utf-8')
       data['password'] = hashed_password
       data['email'] = data['email'].strip().lower()
+      data['isActive'] = True
 
       db.users.insert_one(data)
       return Response(
@@ -65,6 +65,18 @@ class LoginView(APIView):
           status=status.HTTP_401_UNAUTHORIZED,
       )
 
+    # 🛑 REJECT INACTIVE ACCOUNTS IMMEDIATELY
+    if user.get('isActive') is False or user.get('role') == 'Inactive':
+      return Response(
+          {
+              'error': (
+                  'Your account is currently inactive. Please contact your system'
+                  ' administrator.'
+              )
+          },
+          status=status.HTTP_403_FORBIDDEN,
+      )
+
     stored_password = user.get('password', '')
 
     try:
@@ -85,9 +97,8 @@ class LoginView(APIView):
           payload = {
               'email': user_email,
               'role': user_role,
-              'exp': datetime.utcnow()
-              + timedelta(days=7),  # Valid for 7 days
-              'iat': datetime.utcnow(),
+              'exp': datetime.now(timezone.utc) + timedelta(days=7),
+              'iat': datetime.now(timezone.utc),
           }
 
           token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -95,7 +106,7 @@ class LoginView(APIView):
           return Response(
               {
                   'message': 'Login successful!',
-                  'token': token,  # 🌟 Real JWT returned here
+                  'token': token,
                   'email': user_email,
                   'role': user_role,
               },
@@ -159,7 +170,6 @@ class ResetPasswordView(APIView):
           {'error': 'Invalid OTP or Email'}, status=status.HTTP_400_BAD_REQUEST
       )
 
-    # Safely hash the new password string cleanly using bcrypt
     hashed_password = bcrypt.hashpw(
         new_password.encode('utf-8'), bcrypt.gensalt()
     ).decode('utf-8')
